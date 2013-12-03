@@ -80,14 +80,12 @@ write(Msg, Level, #state{formatter=F, formatter_config=FConf}) ->
     CodeFile = proplists:get_value(module, Metadata),
     CodeLine = proplists:get_value(line, Metadata),
     CodeFunc = proplists:get_value(function, Metadata),
-    Node = proplists:get_value(node, Metadata),
     ok = journald_api:sendv([
-        ["MESSAGE=", Text0], 
-        ["PRIORITY=", Level],
-        ["CODE_FILE=", CodeFile],
-        ["CODE_FUNC=", CodeFunc],
-        ["CODE_LINE=", CodeLine],
-        ["SYSLOG_IDENTIFIER=", Node]
+        {"MESSAGE", Text0}, 
+        {"PRIORITY", Level},
+        {"CODE_FILE", CodeFile},
+        {"CODE_FUNC", CodeFunc},
+        {"CODE_LINE", CodeLine}
     ]).
 
 level_to_num(debug) -> 7;
