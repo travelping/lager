@@ -27,10 +27,12 @@
 
 -include("lager.hrl").
 
+-define(JOURNALD_FORMAT, [message]).
+
 %% @private
 init(Config) ->
     [Level, Formatter, FormatterConfig] = [proplists:get_value(K, Config, Def) || {K, Def} <- 
-        [{level, info}, {formatter, lager_default_formatter}, {formatter_config, []}]],
+        [{level, info}, {formatter, lager_default_formatter}, {formatter_config, ?JOURNALD_FORMAT}]],
     State = #state{formatter=Formatter, formatter_config=FormatterConfig, level_num=lager_util:level_to_num(Level), level=level_to_num(Level)},
     {ok, State}.
 
@@ -80,12 +82,14 @@ write(Msg, Level, #state{formatter=F, formatter_config=FConf}) ->
     CodeFile = proplists:get_value(module, Metadata),
     CodeLine = proplists:get_value(line, Metadata),
     CodeFunc = proplists:get_value(function, Metadata),
+    Pid      = proplists:get_value(pid, Metadata),
     ok = journald_api:sendv([
         {"MESSAGE", Text0}, 
         {"PRIORITY", Level},
         {"CODE_FILE", CodeFile},
         {"CODE_FUNC", CodeFunc},
-        {"CODE_LINE", CodeLine}
+        {"CODE_LINE", CodeLine},
+        {"SYSLOG_PID", Pid}
     ]).
 
 level_to_num(debug) -> 7;
