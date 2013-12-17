@@ -23,7 +23,7 @@
 -export([init/1, handle_call/2, handle_event/2, handle_info/2, terminate/2,
         code_change/3]).
 
--record(state, {level, level_num, formatter, formatter_config}).
+-record(state, {level, formatter, formatter_config}).
 
 -include("lager.hrl").
 
@@ -33,16 +33,16 @@
 init(Config) ->
     [Level, Formatter, FormatterConfig] = [proplists:get_value(K, Config, Def) || {K, Def} <- 
         [{level, info}, {formatter, lager_default_formatter}, {formatter_config, ?JOURNALD_FORMAT}]],
-    State = #state{formatter=Formatter, formatter_config=FormatterConfig, level_num=lager_util:level_to_num(Level), level=level_to_num(Level)},
+    State = #state{formatter=Formatter, formatter_config=FormatterConfig, level=lager_util:level_to_num(Level)},
     {ok, State}.
 
 %% @private
-handle_call(get_loglevel, #state{level_num=Level} = State) ->
+handle_call(get_loglevel, #state{level=Level} = State) ->
     {ok, Level, State};
 handle_call({set_loglevel, Level}, State) ->
-    try level_to_num(Level) of
+    try lager_util:level_to_num(Level) of
         Levels ->
-            {ok, ok, State#state{level_num=lager_util:level_to_num(Level), level=Levels}}
+            {ok, ok, State#state{level=Levels}}
     catch
         _:_ ->
             {ok, {error, bad_log_level}, State}
@@ -51,10 +51,10 @@ handle_call(_Request, State) ->
     {ok, ok, State}.
 
 %% @private
-handle_event({log, Message}, #state{level_num=Num, level=L} = State) ->
-    case lager_util:is_loggable(Message, Num, ?MODULE) of
+handle_event({log, Message}, #state{level=L} = State) ->
+    case lager_util:is_loggable(Message, L, ?MODULE) of
         true ->
-            ok = write(Message, L, State),
+            ok = write(Message, State),
             {ok, State};
         false ->
             {ok, State}
@@ -76,21 +76,28 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% Internal functions
 
-write(Msg, Level, #state{formatter=F, formatter_config=FConf}) ->
+write(Msg, #state{formatter=F, formatter_config=FConf}) ->
     Text0 = F:format(Msg, FConf) -- ["\n"],
+    Level = lager_msg:severity(Msg),
     Metadata = lager_msg:metadata(Msg),
+    App      = proplists:get_value(application, Metadata),
+    Pid      = proplists:get_value(pid, Metadata),
+    Node     = proplists:get_value(node, Metadata),
     CodeFile = proplists:get_value(module, Metadata),
     CodeLine = proplists:get_value(line, Metadata),
     CodeFunc = proplists:get_value(function, Metadata),
-    Pid      = proplists:get_value(pid, Metadata),
-    ok = journald_api:sendv([
-        {"MESSAGE", Text0}, 
-        {"PRIORITY", Level},
-        {"CODE_FILE", CodeFile},
-        {"CODE_FUNC", CodeFunc},
-        {"CODE_LINE", CodeLine},
-        {"SYSLOG_PID", Pid}
-    ]).
+    ok = journald_api:sendv(
+        [{E,V} || {E,V} <- [
+            {"MESSAGE", Text0}, 
+            {"PRIORITY", level_to_num(Level)},
+            {"SYSLOG_IDENTIFIER", App},
+            {"SYSLOG_PID", Pid},
+            {"ERLANG_NODE", Node},
+            {"CODE_FILE", CodeFile},
+            {"CODE_FUNC", CodeFunc},
+            {"CODE_LINE", CodeLine}
+        ], V /= undefined]
+    ).
 
 level_to_num(debug) -> 7;
 level_to_num(info) -> 6;
